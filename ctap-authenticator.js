@@ -65,11 +65,7 @@ Auth.prototype.authenticatorMakeCredential = function(rpId, clientDataHash, acco
 
 		if (clientDataHash !== undefined) {
 			argCnt++;
-			// XXX TODO
-			console.log ("test", clientDataHash);
-			// console.log ("test", convHex.hexToBytes (clientDataHash));
-			var buf = new Buffer (clientDataHash);
-            // var buf = new Buffer ([0x5a, 0x81, 0x48, 0x3d, 0x96, 0xb0, 0xbc, 0x15, 0xad, 0x19, 0xaf, 0x7f, 0x5a, 0x66, 0x2e, 0x14, 0xb2, 0x75, 0x72, 0x9f, 0xbc, 0x05, 0x57, 0x9b, 0x18, 0x51, 0x3e, 0x7f, 0x55, 0x00, 0x16, 0xb1]); 
+			var buf = new Buffer (clientDataHash, "hex");
 
 			params[MAKE_CREDENTIAL_PARAMETERS.CLIENT_DATA_HASH] = cbor.encode(buf);
 		} else {
@@ -211,12 +207,3 @@ Auth.prototype.receiveMessage = function(cb) {
 // 	this.message = (message || "");
 // };
 // Auth.prototype.AuthError.prototype = Error.prototype;
-
-function validJson(json) {
-	try {
-		JSON.parse(json);
-	} catch (err) {
-		return false;
-	}
-	return true;
-}

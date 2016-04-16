@@ -12,7 +12,7 @@ var expect = chai.expect;
 
 var authCmd = {
 	rpId: "paypal.com",
-	clientDataHash: 0x5a81483d96b0bc15ad19af7f5a662e14b275729fbc05579b18513e7f550016b1,
+	clientDataHash: "5a81483d96b0bc15ad19af7f5a662e14b275729fbc05579b18513e7f550016b1",
 	account: {
 		rpDisplayName: "PayPal",
 		displayName: "John P. Smith",
