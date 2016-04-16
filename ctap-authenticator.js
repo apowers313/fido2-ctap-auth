@@ -19,12 +19,30 @@ var MAKE_CREDENTIAL_PARAMETERS = {
 	MAX_PARAMETERS: 0x07
 };
 
+var MAKE_CREDENTIAL_RESPONSE = {
+	CREDENTIAL: 0x01,
+	CREDENTIAL_PUBLIC_KEY: 0x02,
+	RAW_ATTESTATION: 0x03
+};
+
 var GET_ASSERTION_PARAMETERS = {
 	RIPD: 0x01,
 	CLIENT_DATA_HASH: 0x02,
 	WHITELIST: 0x03,
 	EXTENSIONS: 0x04,
 	MAX_PARAMETERS: 0x05
+};
+
+var GET_ASSERTION_RESPONSE = {
+	CREDENTIAL: 0x01,
+	AUTHENTICATION_DATA: 0x02,
+	SIGNATURE: 0x03
+};
+
+var GET_INFO_RESPONSE = {
+	VERSIONS: 0x01,
+	EXTENSIONS: 0x02,
+	AAGUID: 0x03
 };
 
 var CBOR_TYPE = {
@@ -56,6 +74,7 @@ Auth.prototype.authenticatorMakeCredential = function(rpId, clientDataHash, acco
 		var params = [];
 
 		// create parameters
+		// TODO: each parameter needs a bit more verification; e.g. - manatory attributes of objects
 		if (rpId !== undefined) {
 			argCnt++;
 			params[MAKE_CREDENTIAL_PARAMETERS.RPID] = cbor.encode(rpId);
@@ -65,7 +84,7 @@ Auth.prototype.authenticatorMakeCredential = function(rpId, clientDataHash, acco
 
 		if (clientDataHash !== undefined) {
 			argCnt++;
-			var buf = new Buffer (clientDataHash, "hex");
+			var buf = new Buffer(clientDataHash, "hex");
 
 			params[MAKE_CREDENTIAL_PARAMETERS.CLIENT_DATA_HASH] = cbor.encode(buf);
 		} else {
@@ -96,44 +115,36 @@ Auth.prototype.authenticatorMakeCredential = function(rpId, clientDataHash, acco
 			params[MAKE_CREDENTIAL_PARAMETERS.EXTENSIONS] = cbor.encode(extensions);
 		}
 
-		// console.log("rpId:");
-		// console.log(params[MAKE_CREDENTIAL_PARAMETERS.RPID]);
-		// console.log("clientDataHash:");
-		// console.log(params[MAKE_CREDENTIAL_PARAMETERS.CLIENT_DATA_HASH]);
-		// console.log("account:");
-		// console.log(params[MAKE_CREDENTIAL_PARAMETERS.ACCOUNT]);
-		// console.log("cryptoParameters:");
-		// console.log(params[MAKE_CREDENTIAL_PARAMETERS.CRYPTO_PARAMTERS]);
-		// console.log("blacklist:");
-		// console.log(params[MAKE_CREDENTIAL_PARAMETERS.BLACKLIST]);
-		// console.log("extensions:");
-		// console.log(params[MAKE_CREDENTIAL_PARAMETERS.EXTENSIONS]);
-		// console.log (argCnt, "params.");
-
 		// create message
 		var cborMsg = new Buffer([CTAP_COMMAND.MAKE_CREDENTIAL, (CBOR_TYPE.MAP + argCnt)]);
 		var i, param;
 		for (i = 0; i < MAKE_CREDENTIAL_PARAMETERS.MAX_PARAMETERS; i++) {
-			if (params[i] !== undefined) { 
+			if (params[i] !== undefined) {
 				param = Buffer.concat([new Buffer([i]), params[i]]);
 				cborMsg = Buffer.concat([cborMsg, param]);
 			}
 		}
 
 		// sendMessage
-		this.externalSend(cborMsg, function(err, res) {
+		var self = this; // could bind, but don't want the external function messing up our context
+		this.externalSend(cborMsg, function(err, sendRes) {
 			if (err) {
-				console.log("Error sending message:", err);
 				reject(Error("Error sending message: " + err));
 			}
-			resolve(res);
+
+			// receiveMessage
+			self.externalReceive(function(err, res) {
+				if (err) {
+					reject(Error("Error receiving message: " + err));
+				}
+
+				// validate
+				// return
+				//    credential, publicKey, rawAttestation
+				resolve (sendRes);
+			});
 		});
 
-		// sendMessage
-		// receiveMessage
-		// validate
-		// return
-		//    credential, publicKey, rawAttestation
 	}.bind(this));
 };
 
