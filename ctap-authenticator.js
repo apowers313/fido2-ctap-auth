@@ -1,5 +1,4 @@
-var cbor = require('cbor');
-var cbor2 = require("cbor-js");
+var cbor = require("cbor-js");
 
 var CTAP_COMMAND = {
 	MAKE_CREDENTIAL: 0x01,
@@ -65,13 +64,13 @@ var CBOR_TYPE = {
 // setup prototype
 module.exports = Auth;
 
-function Auth(auth, options) {
+function Auth(send, receive, options) {
 	if (typeof auth === "string") {
 		console.log("FFI not supported yet");
 	}
 
-	this.externalSend = auth.send;
-	this.externalReceive = auth.receive;
+	this.externalSend = send;
+	this.externalReceive = receive;
 }
 
 Auth.prototype.authenticatorMakeCredential = function(rpId, clientDataHash, account, cryptoParameters, blacklist, extensions) {
@@ -83,51 +82,65 @@ Auth.prototype.authenticatorMakeCredential = function(rpId, clientDataHash, acco
 		// TODO: each parameter needs a bit more verification; e.g. - manatory attributes of objects
 		if (rpId !== undefined) {
 			argCnt++;
-			params[MAKE_CREDENTIAL_PARAMETERS.RPID] = cbor.encode(rpId);
+			params[MAKE_CREDENTIAL_PARAMETERS.RPID] = new Uint8Array(cbor.encode(rpId));
 		} else {
 			reject(Error("rpId parameter required"));
 		}
 
 		if (clientDataHash !== undefined) {
 			argCnt++;
-			var buf = new Buffer(clientDataHash, "hex");
-
-			params[MAKE_CREDENTIAL_PARAMETERS.CLIENT_DATA_HASH] = cbor.encode(buf);
+			var buf = hexStr2TypedArray(clientDataHash);
+			if (buf === null) {
+				reject(Error("couldn't convert clientDataHash to TypedArray"));
+			}
+			params[MAKE_CREDENTIAL_PARAMETERS.CLIENT_DATA_HASH] = new Uint8Array(cbor.encode(buf));
 		} else {
 			reject(Error("clientDataHash parameter required"));
 		}
 
 		if (account !== undefined) {
+			// TODO: check account info
 			argCnt++;
-			params[MAKE_CREDENTIAL_PARAMETERS.ACCOUNT] = cbor.encode(account);
+			params[MAKE_CREDENTIAL_PARAMETERS.ACCOUNT] = new Uint8Array(cbor.encode(account));
 		} else {
 			reject(Error("account parameter required"));
 		}
 
 		if (cryptoParameters !== undefined) {
 			argCnt++;
-			params[MAKE_CREDENTIAL_PARAMETERS.CRYPTO_PARAMTERS] = cbor.encode(cryptoParameters);
+			params[MAKE_CREDENTIAL_PARAMETERS.CRYPTO_PARAMTERS] = new Uint8Array(cbor.encode(cryptoParameters));
 		} else {
 			reject(Error("cryptoParameters parameter required"));
 		}
 
 		if (blacklist !== undefined) {
 			argCnt++;
-			params[MAKE_CREDENTIAL_PARAMETERS.BLACKLIST] = cbor.encode(blacklist);
+			params[MAKE_CREDENTIAL_PARAMETERS.BLACKLIST] = new Uint8Array(cbor.encode(blacklist));
 		}
 
 		if (extensions !== undefined) {
 			argCnt++;
-			params[MAKE_CREDENTIAL_PARAMETERS.EXTENSIONS] = cbor.encode(extensions);
+			params[MAKE_CREDENTIAL_PARAMETERS.EXTENSIONS] = new Uint8Array(cbor.encode(extensions));
 		}
 
+		// XXX: this isn't very flexible, but the only reason I have to write this is becuase someone didn't follow the advice of RFC 7049
+		// "3.7.  Specifying Keys for Maps
+		// In applications that need to interwork with JSON-based applications, keys probably should be limited to UTF-8 strings only; "
+
 		// create message
-		var cborMsg = new Buffer([CTAP_COMMAND.MAKE_CREDENTIAL, (CBOR_TYPE.MAP + argCnt)]);
-		var i, param;
+		var cborMsg = new Uint8Array([CTAP_COMMAND.MAKE_CREDENTIAL, (CBOR_TYPE.MAP + argCnt)]);
+		var i, param, len = 2, newCborMsg;
 		for (i = 0; i < MAKE_CREDENTIAL_PARAMETERS.MAX_PARAMETERS; i++) {
 			if (params[i] !== undefined) {
-				param = Buffer.concat([new Buffer([i]), params[i]]);
-				cborMsg = Buffer.concat([cborMsg, param]);
+				// this creates appends the key:value of the map onto the back of the cborMsg
+				// where "key" is i (the parameter number) and "value" is params[i];
+				// XXX: there's a lot of data copying here, which really sucks performance-wise
+				newCborMsg = new Uint8Array (cborMsg.length + 1 + params[i].length);
+				newCborMsg.set (cborMsg);
+				newCborMsg.set ([i], cborMsg.length);
+				newCborMsg.set (params[i], cborMsg.length + 1);
+
+				cborMsg = newCborMsg;
 			}
 		}
 
@@ -144,154 +157,49 @@ Auth.prototype.authenticatorMakeCredential = function(rpId, clientDataHash, acco
 					reject(Error("Error receiving message: " + err));
 				}
 
-				var x = cbor2.decode (toArrayBuffer(res));
-				console.log ("x:");
-				console.log (x);
-				// parse & validate
-				parseStupidMap(res, function(err, paramList) {
-					if (err) {
-						reject (err);
-					}
+				var response;
+				try {
+					response = cbor.decode (toArrayBuffer(res));
+				} catch (err) {
+					err.message = "Error parsing CBOR response message:" + err.message;
+					reject(Error(err));
+				}
 
-					if (paramList.length < 2 || paramList.length > 3) {
-						reject (Error ("too many parameters in response"));
-					}
+				// validation of number of parameters
+				if (response["1"] === undefined || 
+					response["2"] === undefined) {
+					reject(Error("Expected at least two parameters in response message"));
+				}
 
-					// TODO: validate params
+				// validation of first parameter
+				if (typeof response["1"] !== "object" ||
+					response["1"].type === undefined || // redundant
+					response["1"].type !== "FIDO" ||
+					response["1"].id === undefined ||
+					typeof response["1"].id !== "string") {
+					reject(Error("First in response parameter had wrong format:" + response["1"]));
+				}
 
-					// convert params back to JSON objects
-					var ret = {};
-					var p = [];
-					p.push(cbor.decodeFirst(paramList[0]));
-					p.push(cbor.decodeFirst(paramList[1]));
-					if (paramList.length === 3) p.push(cbor.decodeFirst(paramList[2]));
-					Promise.all(p)
-						.then(function(resList) {
-							ret.credential = resList[0];
-							ret.credentialPublicKey = resList[1].toString("hex");
-							if (paramList.length === 3) ret.rawAttestation = resList[2];
-							resolve(ret);
-						})
-						.catch(function(err) {
-							reject(err);
-						});
-				});
+				// validation of second parameter
+				if (!(response["2"] instanceof Uint8Array)) {
+					reject(Error("Expected second parameter in response message to be Uint8Array"));
+				}
+
+				// TODO: validation of third parameter
+
+				// massage the data a little bit to match our expected return values
+				var ret = {};
+				ret.credential = response["1"];
+				// ret.credentialPublicKey = response["2"].buffer;
+				ret.credentialPublicKey = typedArray2HexStr(response["2"]);
+				if (response["3"] !== undefined) ret.rawAttestation = response["3"];
+				// console.log (ret);
+				resolve (ret);
 			});
 		});
 
 	}.bind(this));
 };
-
-// XXX: this isn't very flexible, but the only reason I have to write this is becuase someone didn't follow the advice of RFC 7049
-// "3.7.  Specifying Keys for Maps
-// In applications that need to interwork with JSON-based applications, keys probably should be
-// limited to UTF-8 strings only; "
-function parseStupidMap (cbor, cb) {
-	var numParams, i, j;
-	var type, len, pos = 0;
-	var ret = [];
-
-	if (Array.isArray(cbor)) {
-		cbor = new Buffer(cbor);
-	}
-	numParams = cbor[0] & CBOR_TYPE.LENGTH_MASK;
-	if (numParams >= CBOR_TYPE.LENGTH_ONE) {
-		return cb (Error ("too many items in map: map sizes over 17 currently not supported"));
-	}
-	pos++; // assuming the map has less than 18 items...
-
-
-	require("hex")(cbor);
-	for (i = 1; i <= numParams; i++) {
-
-		// check that map key = parameter number
-		if (cbor[pos] !== i) {
-			return cb (Error ("Parsing param " + i + " but map key didn't match"));
-		}
-		pos++;
-
-		// figure out how long this element is
-		len = decodeCborLength(cbor, pos);
-		if (len === null) {
-			cb (Error ("Couldn't decode length of CBOR element"));
-		}
-
-		// create buffer
-		var b = new Buffer(len);
-		var c = cbor.copy(b, 0, pos, pos + len);
-		if (c != len) {
-			cb (Error ("error copying cbor to new buffer"));
-		}
-		console.log ("Buf " + i);
-		require("hex")(b);
-		pos += len;
-		console.log ("new pos:", pos);
-
-		// push buffer on to return array
-		ret.push(b);
-	}
-
-	cb (null, ret);
-}
-
-// get the real length of a CBOR element, including header bytes
-function decodeCborLength (buf, pos)
-{
-	console.log ("Decoding buf @ pos:", pos);
-	require ("hex")(buf);
-	var cbor = [
-		buf[pos],
-		buf[pos + 1],
-		buf[pos + 2],
-		buf[pos + 3]
-	];
-	var headerSz = 1;
-
-	// if type is integer, it's just a one byte header and no data
-	if ((cbor[0] & CBOR_TYPE.MAJOR_MASK) === 0) {
-		console.log ("Decoding at " + pos + " was int");
-		return headerSz;
-	}
-
-	var len = cbor[0] & CBOR_TYPE.LENGTH_MASK;
-	if (len < CBOR_TYPE.LENGTH_ONE) {
-		console.log ("Decoding at " + pos + " was small");	
-		return len + headerSz;
-	}
-	switch (len) {
-		case CBOR_TYPE.LENGTH_ONE:
-			headerSz = 2;
-			len = cbor [1] + headerSz;
-			break;
-		case CBOR_TYPE.LENGTH_TWO:
-			headerSz = 3;
-			len = (cbor[1] << 8) + cbor[2] + headerSz;
-			break;
-		case CBOR_TYPE.LENGTH_THREE:
-			headerSz = 4;
-			len = (cbor[1] << 16) + (cbor[2] << 8) + cbor[3] + headerSz;
-			break;
-		case CBOR_TYPE.LENGTH_INDEFINITE: // not supported yet
-			console.log ("WARNING: got indefinite length, not currently supported");
-			return null;
-		default:
-			return null;
-	}
-
-	// maps report number of elements, not real length
-	var i, mapCnt;
-	if ((cbor[0] & CBOR_TYPE.MAJOR_MASK) === CBOR_TYPE.MAP) {
-		console.log ("getting length for map");
-		mapCnt = len;
-		len = 0;
-		for (i = 0; i < mapCnt*2; i++) {
-			len += decodeCborLength (buf, pos + len);
-		}
-	}
-
-	console.log ("Done decoding @ ", pos);
-	return len;
-}
 
 Auth.prototype.authenticatorGetAssertion = function(rpId, clientDataHash, whitelist, extensions) {
 	return new Promise(function(resolve, reject) {
@@ -364,6 +272,46 @@ function toArrayBuffer(buffer) {
     return ab;
 }
 
+var hex2intLookup;
+function hexStr2TypedArray(str) {
+	var hex, i;
+	str = str.toLowerCase();
+
+	// if this is our first time, create our hex lookup table
+	if (hex2intLookup === undefined) {
+		hex2intLookup = [];
+		for (i = 0; i < 256; i++) {
+			// create lowercase lookup
+			hex = i.toString(16).toLowerCase();
+			if (hex.length == 1) hex = "0" + hex;
+			hex2intLookup[hex] = i;
+		}
+	}
+
+	// if we don't have an even number of bytes, it's not a valid hex string
+	if ((str.length%2) !== 0) {
+		return null;
+	}
+
+	// convert each byte...
+	var arr = new Uint8Array(str.length / 2);
+	for (i = 0; i < str.length/2; i++) {
+		hex = str[i*2] + str[(i*2)+1];
+		arr[i] = hex2intLookup[hex];
+		if (arr[i] === undefined) return null;
+	}
+	return arr;
+}
+
+function typedArray2HexStr(ta) {
+	var i, hex, str="";
+	for (i = 0; i < ta.length; i++) {
+		hex = ta[i].toString(16);
+		if (hex.length === 1) hex = "0" + hex;
+		str = str + hex;
+	}
+	return str;
+}
 
 // TODO?
 // Auth.prototype.AuthError = function (message) {

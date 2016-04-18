@@ -9,8 +9,6 @@ function helperSend(cborMsg, cb) {
 
 function helperReceive(cb) {
 	var b = cbor.encode({type: "FIDO", id: "a8f3c9ce-6f16-4130-ad5d-b1d521888b39"});
-	console.log("Credential:");
-	require("hex")(b);
 	if (nextResponseErr) {
 		lastMsgType = 255;
 	}
@@ -42,16 +40,49 @@ function helperReceive(cb) {
 	}
 }
 
+function typedArrayEquals (buf1, buf2)
+{
+    if (buf1.byteLength != buf2.byteLength) return false;
+    var dv1 = new Int8Array(buf1);
+    var dv2 = new Int8Array(buf2);
+    for (var i = 0 ; i != buf1.byteLength ; i++)
+    {
+        if (dv1[i] != dv2[i]) return false;
+    }
+    return true;
+}
+
+function typedArray2HexStr(ta) {
+	var i, hex, str="";
+	for (i = 0; i < ta.length; i++) {
+		hex = ta[i].toString(16);
+		if (hex.length === 1) hex = "0" + hex;
+		str = str + hex;
+	}
+	return str;
+}
+
 var helpers = {
 	clearLastMsg: function() { lastMsgType = undefined; },
 	nextResponseErr: function() { nextResponseErr = true; },
 	clearNextResponseErr: function() { nextResponseErr = false; },
-	makeCredResp: {}, // TODO
+	typedArrayEquals: typedArrayEquals,
+	typedArray2HexStr: typedArray2HexStr,
+	makeCredResp: {
+		credential: {
+			type: 'FIDO',
+			id: 'a8f3c9ce-6f16-4130-ad5d-b1d521888b39'
+		},
+		credentialPublicKey: '3082014b3082010306072a8648ce3d02013081f7020101302c06072a8648ce3d0101022100ffffffff00000001000000000000000000000000ffffffffffffffffffffffff305b0420ffffffff00000001000000000000000000000000fffffffffffffffffffffffc04205ac635d8aa3a93e7b3ebbd55769886bc651d06b0cc53b0f63bce3c3e27d2604b031500c49d360886e704936a6678e1139d26b7819f7e900441046b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5022100ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc63255102010103420004871ba7fe0bf381c23ae9e96dff5c5533a504433705e37a79021265165f95d60dbc67c71eab0301c67d70f54f13c9ed80ce86738516b837818d10cfa3cf072093'
+	},
 	getAssertResp: {}, // TODO
 	cancelResp: {}, // TODO
 	getInfoResp: {}, // TODO
 	defaultResp: {},  // TODO
-	credential: { type: "FIDO", id: "a8f3c9ce-6f16-4130-ad5d-b1d521888b39" },
+	credential: {
+		type: "FIDO",
+		id: "a8f3c9ce-6f16-4130-ad5d-b1d521888b39"
+	},
 	makeCredArgs: {
 		rpId: "paypal.com",
 		clientDataHash: "5a81483d96b0bc15ad19af7f5a662e14b275729fbc05579b18513e7f550016b1",
@@ -74,7 +105,9 @@ var helpers = {
 		send: helperSend,
 		receive: helperReceive
 	},
-authenticatorMakeCredentialCommandCbor: [
+	send: helperSend,
+	receive: helperReceive,
+	authenticatorMakeCredentialCommandCbor: [
 		0x01                                         , // authenticatorMakeCredential command
         0xa4                                         , // map(4)
            0x01                                      , // unsigned(1) -- rpId

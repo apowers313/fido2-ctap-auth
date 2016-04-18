@@ -19,9 +19,8 @@
   "author": "Adam Powers",
   "license": "UNLICENSED",
   "dependencies": {
-    "cbor": "^1.0.1",
-    "commander": "^2.9.0",
-    "convert-hex": "^0.1.0"
+    "cbor-js": "^0.1.0",
+    "commander": "^2.9.0"
   },
   "devDependencies": {
     "chai": "^3.5.0",
