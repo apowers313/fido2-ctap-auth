@@ -17,11 +17,13 @@ describe("Basic tests", function() {
 	beforeEach(function() {
 		sendSpy = sinon.spy(helpers.helperAuth, "send");
 		receiveSpy = sinon.spy(helpers.helperAuth, "receive");
+		helpers.clearNextResponseErr();
 	});
 
 	afterEach(function() {
 		helpers.helperAuth.send.restore();
 		helpers.helperAuth.receive.restore();
+		helpers.clearLastMsg();
 	});
 
 	it("send message", function() {
@@ -70,19 +72,20 @@ describe("Basic tests", function() {
 	it("send real message", function() {
 		var a = new Auth(helpers.helperAuth);
 		var p = a.authenticatorMakeCredential(
-			helpers.authCmd.rpId,
-			helpers.authCmd.clientDataHash,
-			helpers.authCmd.account,
-			helpers.authCmd.cryptoParameters
+			helpers.makeCredArgs.rpId,
+			helpers.makeCredArgs.clientDataHash,
+			helpers.makeCredArgs.account,
+			helpers.makeCredArgs.cryptoParameters
 		);
-		return p.should.eventually.satisfy(function(b1) {
-			var b2 = new Buffer(helpers.authenticatorMakeCredentialCommandCbor);
+		return p.should.eventually.satisfy(function(ret) {
+			var cred = helpers.credential;
+			var cert = new Buffer(helpers.derEccPublicKey).toString("hex");
 			// console.log ("Buffer Received:"); 
-			// require ("hex")(b1);
+			// require ("hex")(ret);
 			// console.log ("Buffer Expected:");
 			// require ("hex")(b2);
 			// console.log (require ("diff-buf") (b1, b2));
-			return b1.equals(b2);
+			return ret.credential.eql(cred) && ret.credentialPublicKey === cert;
 		}).then(function(res) {
 			assert(sendSpy.calledOnce, "send should have been called once");
 		});
@@ -97,6 +100,9 @@ describe("Basic tests", function() {
 	it("authenticatorGetAssertion");
 	it("authenticatorGetInfo");
 	it("authenticatorCancel");
+	it("handles error response");
+	it("authenticatorMakeCredential handles error response");
+	it("authenticatorGetAssertion handles error response");
 
 	it("receive right message");
 });
