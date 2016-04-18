@@ -22,8 +22,8 @@ The Authenticator object has the following methods:
 The auth constructor takes the form: `new Auth(sendFunction, receiveFunction)` where `sendFunction` and `receiveFunction` are called when the `Auth` needs to send / receive data to / from the underlying implementation.
 
 ``` js
-function sendMessage (cbor, cb);
-function receiveMessage (cbor, cb);
+function sendFunction (cbor, cb);
+function receiveFunction (cb);
 // cbor = cbor encoded message
 // cb = callback function for when sending is complete
 ```
