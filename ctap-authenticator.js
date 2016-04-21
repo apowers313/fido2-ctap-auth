@@ -128,47 +128,32 @@ Auth.prototype.authenticatorMakeCredential = function(rpId, clientDataHash, acco
 		// In applications that need to interwork with JSON-based applications, keys probably should be limited to UTF-8 strings only; "
 
 		// create message
-		var cborMsg = new Uint8Array([CTAP_COMMAND.MAKE_CREDENTIAL, (CBOR_TYPE.MAP + argCnt)]);
-		var i, param, len = 2, newCborMsg;
-		for (i = 0; i < MAKE_CREDENTIAL_PARAMETERS.MAX_PARAMETERS; i++) {
-			if (params[i] !== undefined) {
-				// this creates appends the key:value of the map onto the back of the cborMsg
-				// where "key" is i (the parameter number) and "value" is params[i];
-				// XXX: there's a lot of data copying here, which really sucks performance-wise
-				newCborMsg = new Uint8Array (cborMsg.length + 1 + params[i].length);
-				newCborMsg.set (cborMsg);
-				newCborMsg.set ([i], cborMsg.length);
-				newCborMsg.set (params[i], cborMsg.length + 1);
-
-				cborMsg = newCborMsg;
-			}
-		}
+		var cborMsg = params2CborMsg(CTAP_COMMAND.MAKE_CREDENTIAL, argCnt, params, MAKE_CREDENTIAL_PARAMETERS.MAX_PARAMETERS);
 
 		// sendMessage
-		var self = this; // could bind, but don't want the external function messing up our context
 		this.externalSend(cborMsg, function(err, sendRes) {
 			if (err) {
 				reject(Error("Error sending message: " + err));
 			}
 
 			// receiveMessage
-			self.externalReceive(function(err, res) {
+			this.externalReceive(function(err, res) {
 				if (err) {
 					reject(Error("Error receiving message: " + err));
 				}
 
 				var response;
 				try {
-					response = cbor.decode (toArrayBuffer(res));
-				} catch (err) {
-					err.message = "Error parsing CBOR response message:" + err.message;
+					response = cbor.decode(toArrayBuffer(res));
+				} catch (cErr) {
+					cErr.message = "Error parsing CBOR response message:" + cErr.message;
 					reject(Error(err));
 				}
 
 				// validation of number of parameters
-				if (response["1"] === undefined || 
+				if (response["1"] === undefined ||
 					response["2"] === undefined) {
-					reject(Error("Expected at least two parameters in response message"));
+					reject(Error("Expected at least two parameters in makeCredential response message"));
 				}
 
 				// validation of first parameter
@@ -177,12 +162,12 @@ Auth.prototype.authenticatorMakeCredential = function(rpId, clientDataHash, acco
 					response["1"].type !== "FIDO" ||
 					response["1"].id === undefined ||
 					typeof response["1"].id !== "string") {
-					reject(Error("First in response parameter had wrong format:" + response["1"]));
+					reject(Error("First parameter in makeCredential response had wrong format:" + response["1"]));
 				}
 
 				// validation of second parameter
 				if (!(response["2"] instanceof Uint8Array)) {
-					reject(Error("Expected second parameter in response message to be Uint8Array"));
+					reject(Error("Second parameter in makeCredential response should be Uint8Array"));
 				}
 
 				// TODO: validation of third parameter
@@ -194,24 +179,115 @@ Auth.prototype.authenticatorMakeCredential = function(rpId, clientDataHash, acco
 				ret.credentialPublicKey = typedArray2HexStr(response["2"]);
 				if (response["3"] !== undefined) ret.rawAttestation = response["3"];
 				// console.log (ret);
-				resolve (ret);
-			});
-		});
+				resolve(ret);
+			}.bind(this));
+		}.bind(this));
 
 	}.bind(this));
 };
 
 Auth.prototype.authenticatorGetAssertion = function(rpId, clientDataHash, whitelist, extensions) {
 	return new Promise(function(resolve, reject) {
-		// authenticatorGetAssertion
-		// create message
+		var argCnt = 0;
+		var params = [];
+
+		// create parameters
+		// TODO: each parameter needs a bit more verification; e.g. - manatory attributes of objects
+		if (rpId !== undefined) {
+			argCnt++;
+			params[GET_ASSERTION_PARAMETERS.RPID] = new Uint8Array(cbor.encode(rpId));
+		} else {
+			reject(Error("rpId parameter required"));
+		}
+
+		if (clientDataHash !== undefined) {
+			argCnt++;
+			var buf = hexStr2TypedArray(clientDataHash);
+			if (buf === null) {
+				reject(Error("couldn't convert clientDataHash to TypedArray"));
+			}
+			params[GET_ASSERTION_PARAMETERS.CLIENT_DATA_HASH] = new Uint8Array(cbor.encode(buf));
+		} else {
+			reject(Error("clientDataHash parameter required"));
+		}
+
+		if (whitelist !== undefined) {
+			argCnt++;
+			params[GET_ASSERTION_PARAMETERS.WHITELIST] = new Uint8Array(cbor.encode(whitelist));
+		}
+
+		if (extensions !== undefined) {
+			argCnt++;
+			params[GET_ASSERTION_PARAMETERS.EXTENSIONS] = new Uint8Array(cbor.encode(extensions));
+		}
+
 		// CBORize
+		var cborMsg = params2CborMsg(CTAP_COMMAND.GET_ASSERTION, argCnt, params, GET_ASSERTION_PARAMETERS.MAX_PARAMETERS);
+
 		// sendMessage
-		// receiveMessage
-		// validate
-		// return
-		//     credential, authenticatorData, signature
-	});
+		this.externalSend(cborMsg, function(err, sendRes) {
+			if (err) {
+				reject(Error("Error sending message: " + err));
+			}
+
+			// receiveMessage
+			this.externalReceive(function(err, res) {
+				if (err) {
+					reject(Error("Error receiving message: " + err));
+				}
+
+				var response;
+				try {
+					response = cbor.decode(toArrayBuffer(res));
+				} catch (cErr) {
+					cErr.message = "Error parsing CBOR response message: " + cErr.message;
+					reject(Error(cErr));
+				}
+
+				// validation of number of parameters
+				if (response["2"] === undefined ||
+					response["3"] === undefined) {
+					reject(Error("Expected at least two parameters in getAssertion response message"));
+				}
+
+				// validation of first parameter: credential
+				if ((typeof response["1"] !== undefined && // if it's something other than an object...
+						typeof response["1"] !== "object") || // or an object with the wrong parameters...
+					response["1"].type === undefined ||
+					response["1"].type !== "FIDO" ||
+					response["1"].id === undefined ||
+					typeof response["1"].id !== "string"
+				) {
+					// console.log (typeof response["1"]);
+					// console.log (response["1"].type);
+					// console.log (response["1"].id);
+					// console.log (typeof response["1"].id);
+					reject(Error("First in response parameter had wrong format: " + response["1"]));
+				}
+				// validation of second parameter: authenticatorData
+				if (!(response["2"] instanceof Uint8Array)) {
+					reject(Error("Expected second parameter in getAttestation response to be Uint8Array"));
+				}
+
+				// validation of third parameter: signature
+				if (!(response["3"] instanceof Uint8Array)) {
+					reject(Error("Expected third parameter in getAttestation response to be Uint8Array"));
+				}
+
+				// massage the data a little bit to match our expected return values
+				// return:
+				//     credential, authenticatorData, signature
+				var ret = {};
+				if (response["1"] !== undefined) ret.credential = response["1"];
+				// ret.credentialPublicKey = response["2"].buffer;
+				ret.authenticatorData = typedArray2HexStr(response["2"]); // TODO
+				// ret.rawAttestation = response["3"].buffer;
+				ret.signature = typedArray2HexStr(response["3"]); // TODO
+				// console.log (ret);
+				resolve(ret);
+			}.bind(this));
+		}.bind(this));
+	}.bind(this));
 };
 
 Auth.prototype.authenticatorCancel = function() {
@@ -263,16 +339,37 @@ Auth.prototype.receiveMessage = function(cb) {
 	}.bind(this));
 };
 
+function params2CborMsg(cmd, argCnt, params, max) {
+	var cborMsg = new Uint8Array([cmd, (CBOR_TYPE.MAP + argCnt)]);
+	var i, param, len = 2,
+		newCborMsg;
+	for (i = 0; i < max; i++) {
+		if (params[i] !== undefined) {
+			// this creates appends the key:value of the map onto the back of the cborMsg
+			// where "key" is i (the parameter number) and "value" is params[i];
+			// XXX: there's a lot of data copying here, which really sucks performance-wise
+			newCborMsg = new Uint8Array(cborMsg.length + 1 + params[i].length);
+			newCborMsg.set(cborMsg);
+			newCborMsg.set([i], cborMsg.length);
+			newCborMsg.set(params[i], cborMsg.length + 1);
+
+			cborMsg = newCborMsg;
+		}
+	}
+	return cborMsg;
+}
+
 function toArrayBuffer(buffer) {
-    var ab = new ArrayBuffer(buffer.length);
-    var view = new Uint8Array(ab);
-    for (var i = 0; i < buffer.length; ++i) {
-        view[i] = buffer[i];
-    }
-    return ab;
+	var ab = new ArrayBuffer(buffer.length);
+	var view = new Uint8Array(ab);
+	for (var i = 0; i < buffer.length; ++i) {
+		view[i] = buffer[i];
+	}
+	return ab;
 }
 
 var hex2intLookup;
+
 function hexStr2TypedArray(str) {
 	var hex, i;
 	str = str.toLowerCase();
@@ -289,14 +386,14 @@ function hexStr2TypedArray(str) {
 	}
 
 	// if we don't have an even number of bytes, it's not a valid hex string
-	if ((str.length%2) !== 0) {
+	if ((str.length % 2) !== 0) {
 		return null;
 	}
 
 	// convert each byte...
 	var arr = new Uint8Array(str.length / 2);
-	for (i = 0; i < str.length/2; i++) {
-		hex = str[i*2] + str[(i*2)+1];
+	for (i = 0; i < str.length / 2; i++) {
+		hex = str[i * 2] + str[(i * 2) + 1];
 		arr[i] = hex2intLookup[hex];
 		if (arr[i] === undefined) return null;
 	}
@@ -304,7 +401,7 @@ function hexStr2TypedArray(str) {
 }
 
 function typedArray2HexStr(ta) {
-	var i, hex, str="";
+	var i, hex, str = "";
 	for (i = 0; i < ta.length; i++) {
 		hex = ta[i].toString(16);
 		if (hex.length === 1) hex = "0" + hex;

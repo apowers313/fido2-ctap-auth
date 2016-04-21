@@ -69,7 +69,7 @@ describe("Basic tests", function() {
 		});
 	});
 
-	it("send real message", function() {
+	it("makeCredential", function() {
 		var a = new Auth(helpers.send, helpers.receive);
 		var p = a.authenticatorMakeCredential(
 			helpers.makeCredArgs.rpId,
@@ -78,7 +78,6 @@ describe("Basic tests", function() {
 			helpers.makeCredArgs.cryptoParameters
 		);
 		return p.should.eventually.satisfy(function(ret) {
-			var cred = helpers.credential;
 			// var cert = new Buffer(helpers.derEccPublicKey).toString("hex");
 			// console.log ("Buffer Received:"); 
 			// require ("hex")(ret);
@@ -98,7 +97,27 @@ describe("Basic tests", function() {
 	it("authenticatorMakeCredential missing cryptoParameters");
 	it("authenticatorMakeCredential with blacklist");
 	it("authenticatorMakeCredential with extensions");
-	it("authenticatorGetAssertion");
+
+	it("authenticatorGetAssertion", function() {
+		var a = new Auth(helpers.send, helpers.receive);
+		var p = a.authenticatorGetAssertion(
+			helpers.makeCredArgs.rpId,
+			helpers.makeCredArgs.clientDataHash
+		);
+		return p.should.eventually.satisfy(function(ret) {
+			// var cert = new Buffer(helpers.derEccPublicKey).toString("hex");
+			// console.log ("Buffer Received:"); 
+			// require ("hex")(ret);
+			// console.log ("Buffer Expected:");
+			// require ("hex")(b2);
+			// console.log (require ("diff-buf") (b1, b2));
+			return ret.should.eql(helpers.getAssertResp);
+		}).then(function(res) {
+			assert(sendSpy.calledOnce, "send should have been called once");
+			assert(receiveSpy.calledOnce, "receive should have been called once");
+		});
+	});
+
 	it("authenticatorGetInfo");
 	it("authenticatorCancel");
 	it("handles error response");
