@@ -78,12 +78,8 @@ describe("Basic tests", function() {
 			helpers.makeCredArgs.cryptoParameters
 		);
 		return p.should.eventually.satisfy(function(ret) {
-			// var cert = new Buffer(helpers.derEccPublicKey).toString("hex");
-			// console.log ("Buffer Received:"); 
-			// require ("hex")(ret);
-			// console.log ("Buffer Expected:");
-			// require ("hex")(b2);
-			// console.log (require ("diff-buf") (b1, b2));
+			// convert ByteArray to hex string for comparison
+			ret.credentialPublicKey = helpers.typedArray2HexStr(new Uint8Array(ret.credentialPublicKey));
 			return ret.should.eql(helpers.makeCredResp);
 		}).then(function(res) {
 			assert(sendSpy.calledOnce, "send should have been called once");
@@ -105,12 +101,10 @@ describe("Basic tests", function() {
 			helpers.makeCredArgs.clientDataHash
 		);
 		return p.should.eventually.satisfy(function(ret) {
-			// var cert = new Buffer(helpers.derEccPublicKey).toString("hex");
-			// console.log ("Buffer Received:"); 
-			// require ("hex")(ret);
-			// console.log ("Buffer Expected:");
-			// require ("hex")(b2);
-			// console.log (require ("diff-buf") (b1, b2));
+			assert.isDefined (ret.credential);
+			// convert ByteArrays to hex strings for comparison
+			ret.authenticatorData = helpers.typedArray2HexStr(new Uint8Array (ret.authenticatorData));
+			ret.signature = helpers.typedArray2HexStr(new Uint8Array (ret.signature));
 			return ret.should.eql(helpers.getAssertResp);
 		}).then(function(res) {
 			assert(sendSpy.calledOnce, "send should have been called once");

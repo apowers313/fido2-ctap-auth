@@ -176,7 +176,7 @@ Auth.prototype.authenticatorMakeCredential = function(rpId, clientDataHash, acco
 				var ret = {};
 				ret.credential = response["1"];
 				// ret.credentialPublicKey = response["2"].buffer;
-				ret.credentialPublicKey = typedArray2HexStr(response["2"]);
+				ret.credentialPublicKey = typedArrayBytes2ArrayBuffer(response["2"]);
 				if (response["3"] !== undefined) ret.rawAttestation = response["3"];
 				// console.log (ret);
 				resolve(ret);
@@ -279,11 +279,8 @@ Auth.prototype.authenticatorGetAssertion = function(rpId, clientDataHash, whitel
 				//     credential, authenticatorData, signature
 				var ret = {};
 				if (response["1"] !== undefined) ret.credential = response["1"];
-				// ret.credentialPublicKey = response["2"].buffer;
-				ret.authenticatorData = typedArray2HexStr(response["2"]); // TODO
-				// ret.rawAttestation = response["3"].buffer;
-				ret.signature = typedArray2HexStr(response["3"]); // TODO
-				// console.log (ret);
+				ret.authenticatorData = typedArrayBytes2ArrayBuffer(response["2"]);
+				ret.signature = typedArrayBytes2ArrayBuffer(response["3"]);
 				resolve(ret);
 			}.bind(this));
 		}.bind(this));
@@ -408,6 +405,16 @@ function typedArray2HexStr(ta) {
 		str = str + hex;
 	}
 	return str;
+}
+
+function typedArrayBytes2ArrayBuffer(ta) {
+	var ab = new ArrayBuffer (ta.byteLength); 
+	var int = new Uint8Array (ab);
+	var i;
+	for (i = 0; i < int.length; i++) {
+		int[i] = ta[i];
+	}
+	return ab;
 }
 
 // TODO?
